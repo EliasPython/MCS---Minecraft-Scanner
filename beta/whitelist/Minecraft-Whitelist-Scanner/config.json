@@ -1,0 +1,19 @@
+{
+    "accounts": [
+        {
+            "username": "",
+            "password": ""
+        }
+    ],
+    "chatWarning": true,
+    "suppressLogs": false,
+    "customIps": false,
+    "ipsPath": "./ips",
+    "sql": {
+        "host": "",
+        "port": 5432,
+        "user": "",
+        "password": "",
+        "database": ""
+    }
+}
