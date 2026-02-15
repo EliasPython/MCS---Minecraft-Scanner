@@ -78,7 +78,7 @@
 
 ```bash
 git clone https://github.com/EliasPython/MCS---Minecraft-Scanner.git
-cd cyber-mcs-scanner
+cd MCS---Minecraft-Scanner
 ```
 
 
