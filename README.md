@@ -65,21 +65,23 @@
 ## 📋 Prerequisites
 
 - Python 3.8 or higher
-- Windows, Linux or macOS
+- Windows
 - Internet connection
 
 ---
 
 ## 🚀 Installation
 
-### 1. Clone Repository
+### 1. Clone Repository (or download the ZIP)
 
 ```bash
 git clone https://github.com/your-username/cyber-mcs-scanner.git
 cd cyber-mcs-scanner
 ```
 
-### 2. Install Dependencies
+
+
+### 2. Install Dependencies (or on Windows run the setup.bat file)
 
 ```bash
 pip install -r requirements.txt
