@@ -1,5 +1,7 @@
 # 🌹 CYBER MCS SCANNER v2.6
-blob:https://github.com/ef1a885c-f1df-425e-afe6-70728b9b4aed
+
+![Alt](screenshots/Screenshot1.png)
+
 <div align="center">
 
 ![Version](https://img.shields.io/badge/Version-2.6-neonpink?style=for-the-badge&color=ff00aa)
