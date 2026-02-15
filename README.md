@@ -77,7 +77,7 @@
 ### 1. Clone Repository (or download the ZIP)
 
 ```bash
-git clone https://github.com/your-username/cyber-mcs-scanner.git
+git clone https://github.com/EliasPython/MCS---Minecraft-Scanner.git
 cd cyber-mcs-scanner
 ```
 
