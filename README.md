@@ -1,6 +1,6 @@
 # 🌹 CYBER MCS SCANNER v2.6
 
-![Alt](screenshots/Screenshot1.png)
+![Alt](screenshots/Screenshot2.png)
 
 <div align="center">
 
