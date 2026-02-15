@@ -1,5 +1,5 @@
 # 🌹 CYBER MCS SCANNER v2.6
-screenshots/Screenshot 2026-02-14 163100.png
+https://github.com/EliasPython/MCS---Minecraft-Scanner/blob/main/screenshots/Screenshot%202026-02-14%20163100.png
 <div align="center">
 
 ![Version](https://img.shields.io/badge/Version-2.6-neonpink?style=for-the-badge&color=ff00aa)
