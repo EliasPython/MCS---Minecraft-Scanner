@@ -1,5 +1,5 @@
 # 🌹 CYBER MCS SCANNER v2.6
-![Alt](screenshots/Screenshot 2026-02-14 163100.png)
+screenshots/Screenshot 2026-02-14 163100.png
 <div align="center">
 
 ![Version](https://img.shields.io/badge/Version-2.6-neonpink?style=for-the-badge&color=ff00aa)
