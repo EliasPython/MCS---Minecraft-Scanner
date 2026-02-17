@@ -295,6 +295,9 @@ python -c "import tkinter; print(tkinter.Tcl().eval('info patchlevel'))"
 
 ## 📝 Changelog
 
+### v2.7 "Data city"   (2026-02-15)
+- Added Database
+- 🔧 Improved performance and stability
 ### v2.6 "Neon Nights" (2026-02-14)
 - 🌟 Advanced Stats Tab with real-time performance metrics
 - 🌟 10-second scan history graph
@@ -307,9 +310,7 @@ python -c "import tkinter; print(tkinter.Tcl().eval('info patchlevel'))"
 - 🚀 Improved scanning performance
 - 🔧 Various bugfixes
 
-### v2.4 "First GUI Release" (2026-02-12)
-- 🎉 First GUI version
-- ⚡ High-Performance Minecraft Server Scanner
+
 
 ---
 
