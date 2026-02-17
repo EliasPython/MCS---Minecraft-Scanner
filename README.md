@@ -1,4 +1,4 @@
-# 🌹 CYBER MCS SCANNER v2.6
+# 🌹 CYBER MCS SCANNER v2.7
 
 ![Alt](screenshots/Screenshot2.png)
 
