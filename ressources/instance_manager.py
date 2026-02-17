@@ -1,14 +1,10 @@
-"""
-Instance Manager for Minecraft Server Scanner
-Handles master/worker detection and inter-process communication
-"""
-
 import socket
 import json
 import threading
 import time
 import os
 import sys
+import errno
 from typing import Dict, Any, Optional, Callable
 from dataclasses import dataclass, asdict
 
@@ -16,6 +12,9 @@ from dataclasses import dataclass, asdict
 IPC_HOST = "127.0.0.1"
 IPC_PORT = 9999
 IPC_BUFFER_SIZE = 4096
+MAX_RECONNECT_ATTEMPTS = 5
+RECONNECT_DELAY = 2.0
+
 
 @dataclass
 class StatsMessage:
@@ -93,6 +92,12 @@ class InstanceManager:
         
         # Worker callback for server broadcasts
         self.server_broadcast_callback: Optional[Callable[[str], None]] = None
+        
+        # Connection health tracking
+        self.last_heartbeat = time.time()
+        self.heartbeat_lock = threading.Lock()
+        self.reconnect_attempts = 0
+
 
         
     def check_master(self) -> bool:
@@ -139,10 +144,24 @@ class InstanceManager:
     
     def start_as_worker(self) -> bool:
         """Start as worker instance - connect to master"""
+        return self._connect_worker()
+    
+    def _connect_worker(self) -> bool:
+        """Internal method to connect/reconnect to master"""
         try:
+            # Close existing socket if any
+            if self.master_socket:
+                try:
+                    self.master_socket.close()
+                except:
+                    pass
+                self.master_socket = None
+            
             self.master_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.master_socket.settimeout(5.0)
             self.master_socket.connect((IPC_HOST, IPC_PORT))
             self.running = True
+            self.reconnect_attempts = 0
             
             # Start heartbeat thread
             heartbeat_thread = threading.Thread(target=self._worker_heartbeat, daemon=True)
@@ -152,7 +171,30 @@ class InstanceManager:
             return True
         except Exception as e:
             print(f"[INSTANCE] Failed to connect as worker: {e}")
+            self.reconnect_attempts += 1
             return False
+    
+    def _ensure_connection(self) -> bool:
+        """Ensure worker is connected to master, attempt reconnect if needed"""
+        if self.is_master or not self.running:
+            return True
+        
+        # Check if connection is healthy
+        with self.heartbeat_lock:
+            time_since_heartbeat = time.time() - self.last_heartbeat
+        
+        # If connection seems stale, try to reconnect
+        if time_since_heartbeat > 10 or self.reconnect_attempts > 0:
+            if self.reconnect_attempts < MAX_RECONNECT_ATTEMPTS:
+                print(f"[WORKER] Attempting reconnect ({self.reconnect_attempts + 1}/{MAX_RECONNECT_ATTEMPTS})...")
+                time.sleep(RECONNECT_DELAY)
+                return self._connect_worker()
+            else:
+                print("[WORKER] Max reconnect attempts reached")
+                return False
+        
+        return True
+
     
     def _server_loop(self):
         """Server loop for master - accepts worker connections"""
@@ -169,9 +211,16 @@ class InstanceManager:
                 client_thread.start()
             except socket.timeout:
                 continue
+            except OSError as e:
+                if e.errno == errno.EBADF:
+                    # Socket closed, exit gracefully
+                    break
+                if self.running:
+                    print(f"[MASTER] Server OS error: {e}")
             except Exception as e:
                 if self.running:
                     print(f"[MASTER] Server error: {e}")
+
     
     def _handle_worker(self, client_socket: socket.socket):
         """Handle communication with a single worker"""
@@ -210,7 +259,10 @@ class InstanceManager:
                         
                         # Send acknowledgment
                         ack = json.dumps({"status": "ok"})
-                        client_socket.send(ack.encode('utf-8'))
+                        try:
+                            client_socket.send(ack.encode('utf-8'))
+                        except (BrokenPipeError, OSError):
+                            break
                         continue
                         
                     except (json.JSONDecodeError, TypeError, KeyError):
@@ -234,7 +286,10 @@ class InstanceManager:
                             server_key=server_msg.server_key,
                             already_sent=already_sent
                         )
-                        client_socket.send(response.to_json().encode('utf-8'))
+                        try:
+                            client_socket.send(response.to_json().encode('utf-8'))
+                        except (BrokenPipeError, OSError):
+                            break
                         continue
                         
                     except (json.JSONDecodeError, TypeError, KeyError):
@@ -242,6 +297,8 @@ class InstanceManager:
                     
                 except socket.timeout:
                     continue
+                except (ConnectionResetError, BrokenPipeError, OSError):
+                    break
                 except Exception as e:
                     print(f"[MASTER] Worker handler error: {e}")
                     break
@@ -261,6 +318,7 @@ class InstanceManager:
                 client_socket.close()
             except:
                 pass
+
     
     def _broadcast_server_to_workers(self, server_key: str, exclude_worker: Optional[str] = None):
         """Broadcast a newly sent server to all workers except the sender"""
@@ -271,29 +329,61 @@ class InstanceManager:
         )
         message_data = broadcast_msg.to_json().encode('utf-8')
         
+        dead_workers = []
+        
         with self.lock:
             for worker_id, worker_socket in self.worker_sockets.items():
                 if worker_id != exclude_worker:
                     try:
                         worker_socket.send(message_data)
+                    except (BrokenPipeError, ConnectionResetError, OSError):
+                        dead_workers.append(worker_id)
                     except Exception as e:
                         print(f"[MASTER] Failed to broadcast to worker {worker_id[:8]}: {e}")
+                        dead_workers.append(worker_id)
+        
+        # Clean up dead workers
+        for worker_id in dead_workers:
+            with self.lock:
+                if worker_id in self.worker_sockets:
+                    try:
+                        self.worker_sockets[worker_id].close()
+                    except:
+                        pass
+                    del self.worker_sockets[worker_id]
+                if worker_id in self.worker_stats:
+                    del self.worker_stats[worker_id]
+
 
     
     def _worker_heartbeat(self):
-        """Worker thread - sends periodic stats to master"""
+        """Worker thread - sends periodic stats to master and monitors connection"""
         while self.running:
             try:
-                # Stats will be updated externally and sent here
+                # Update heartbeat timestamp
+                with self.heartbeat_lock:
+                    self.last_heartbeat = time.time()
+                
+                # Check connection health
+                if not self._ensure_connection():
+                    print("[WORKER] Lost connection to master")
+                    break
+                    
                 time.sleep(2)  # Heartbeat interval
-            except:
+            except Exception as e:
+                print(f"[WORKER] Heartbeat error: {e}")
                 break
+
     
     def send_worker_stats(self, scanned: int, found: int, with_players: int, sent_count: int,
                           peak_scans_per_minute: float = 0.0, peak_found_per_minute: float = 0.0,
                           scans_per_minute: float = 0.0, found_per_minute: float = 0.0):
         """Send stats update from worker to master"""
         if not self.master_socket or not self.running:
+            return
+        
+        # Ensure connection is healthy before sending
+        if not self._ensure_connection():
             return
         
         try:
@@ -310,6 +400,10 @@ class InstanceManager:
             )
             self.master_socket.send(message.to_json().encode('utf-8'))
             
+            # Update heartbeat timestamp
+            with self.heartbeat_lock:
+                self.last_heartbeat = time.time()
+            
             # Receive acknowledgment (non-blocking check for server broadcasts)
             self.master_socket.settimeout(0.1)
             try:
@@ -323,13 +417,21 @@ class InstanceManager:
                     pass
             except socket.timeout:
                 pass
+        except (ConnectionResetError, BrokenPipeError, OSError) as e:
+            print(f"[WORKER] Connection lost: {e}")
+            self.reconnect_attempts += 1
         except Exception as e:
             print(f"[WORKER] Failed to send stats: {e}")
+
 
     
     def check_server_sent(self, server_key: str) -> bool:
         """Check if a server was already sent (worker only)"""
         if not self.master_socket or not self.running or self.is_master:
+            return False
+        
+        # Ensure connection is healthy
+        if not self._ensure_connection():
             return False
         
         try:
@@ -344,15 +446,29 @@ class InstanceManager:
             self.master_socket.settimeout(5.0)
             data = self.master_socket.recv(IPC_BUFFER_SIZE)
             response = ServerResponseMessage.from_json(data.decode('utf-8'))
+            
+            # Update heartbeat timestamp
+            with self.heartbeat_lock:
+                self.last_heartbeat = time.time()
+            
             return response.already_sent
             
+        except (ConnectionResetError, BrokenPipeError, OSError) as e:
+            print(f"[WORKER] Connection lost during check: {e}")
+            self.reconnect_attempts += 1
+            return False
         except Exception as e:
             print(f"[WORKER] Failed to check server status: {e}")
             return False
+
     
     def mark_server_sent(self, server_key: str) -> bool:
         """Mark a server as sent and notify master (worker only)"""
         if not self.master_socket or not self.running or self.is_master:
+            return False
+        
+        # Ensure connection is healthy
+        if not self._ensure_connection():
             return False
         
         try:
@@ -367,11 +483,21 @@ class InstanceManager:
             self.master_socket.settimeout(5.0)
             data = self.master_socket.recv(IPC_BUFFER_SIZE)
             response = ServerResponseMessage.from_json(data.decode('utf-8'))
+            
+            # Update heartbeat timestamp
+            with self.heartbeat_lock:
+                self.last_heartbeat = time.time()
+            
             return not response.already_sent  # Returns True if newly marked
             
+        except (ConnectionResetError, BrokenPipeError, OSError) as e:
+            print(f"[WORKER] Connection lost during mark: {e}")
+            self.reconnect_attempts += 1
+            return False
         except Exception as e:
             print(f"[WORKER] Failed to mark server as sent: {e}")
             return False
+
     
     def set_server_broadcast_callback(self, callback: Callable[[str], None]):
         """Set callback for receiving server broadcasts from master"""
